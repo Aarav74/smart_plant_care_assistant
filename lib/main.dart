@@ -1,5 +1,3 @@
-// ignore_for_file: deprecated_member_use
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -138,7 +136,7 @@ class NotificationData {
 class PlantCareModel {
   // This class simulates a pretrained model that provides plant-specific recommendations
   // In a production app, this would be replaced with actual model inference
-  
+
   static Map<String, Map<String, dynamic>> plantRequirements = {
     'generic': {
       'moisture': {'min': 1200, 'max': 3500},
@@ -172,8 +170,9 @@ class PlantCareModel {
 
   static String getRecommendation(PlantData data) {
     final type = data.plantType;
-    final requirements = plantRequirements[type] ?? plantRequirements['generic']!;
-    
+    final requirements =
+        plantRequirements[type] ?? plantRequirements['generic']!;
+
     // Check each parameter and provide recommendations
     if (data.soilMoisture < requirements['moisture']!['min']) {
       return 'Water your ${_getPlantTypeName(type)} soon! Soil moisture is low.';
@@ -204,23 +203,24 @@ class PlantCareModel {
 
   static String getStatus(PlantData data) {
     final type = data.plantType;
-    final requirements = plantRequirements[type] ?? plantRequirements['generic']!;
-    
+    final requirements =
+        plantRequirements[type] ?? plantRequirements['generic']!;
+
     // Count how many parameters are out of range
     int issues = 0;
-    if (data.soilMoisture < requirements['moisture']!['min'] || 
+    if (data.soilMoisture < requirements['moisture']!['min'] ||
         data.soilMoisture > requirements['moisture']!['max']) {
       issues++;
     }
-    if (data.lightLevel < requirements['light']!['min'] || 
+    if (data.lightLevel < requirements['light']!['min'] ||
         data.lightLevel > requirements['light']!['max']) {
       issues++;
     }
-    if (data.temperature < requirements['temperature']!['min'] || 
+    if (data.temperature < requirements['temperature']!['min'] ||
         data.temperature > requirements['temperature']!['max']) {
       issues++;
     }
-    
+
     if (issues == 0) return 'Healthy ${_getPlantTypeName(type)}';
     if (issues == 1) return '${_getPlantTypeName(type)} needs attention';
     if (issues == 2) return '${_getPlantTypeName(type)} stressed';
@@ -229,11 +229,12 @@ class PlantCareModel {
 
   static String _getPlantTypeName(String type) {
     return {
-      'generic': 'plant',
-      'succulent': 'succulent',
-      'fern': 'fern',
-      'orchid': 'orchid',
-    }[type] ?? 'plant';
+          'generic': 'plant',
+          'succulent': 'succulent',
+          'fern': 'fern',
+          'orchid': 'orchid',
+        }[type] ??
+        'plant';
   }
 }
 
@@ -257,18 +258,9 @@ class _PlantTypeSelectorState extends State<PlantTypeSelector> {
 
   final Map<String, Map<String, dynamic>> plantTypes = {
     'generic': {'name': 'Generic Plant', 'icon': Icons.eco},
-    'succulent': {
-      'name': 'Succulent',
-      'icon': Icons.energy_savings_leaf,
-    },
-    'fern': {
-      'name': 'Fern',
-      'icon': Icons.forest,
-    },
-    'orchid': {
-      'name': 'Orchid',
-      'icon': Icons.local_florist,
-    },
+    'succulent': {'name': 'Succulent', 'icon': Icons.energy_savings_leaf},
+    'fern': {'name': 'Fern', 'icon': Icons.forest},
+    'orchid': {'name': 'Orchid', 'icon': Icons.local_florist},
   };
 
   @override
@@ -336,7 +328,7 @@ class _PlantDashboardState extends State<PlantDashboard>
   Timer? _timer;
   List<PlantData> dataHistory = [];
   List<NotificationData> notifications = [];
-  String esp32Ip = "192.168.1.100";
+  String esp32Ip = "192.168.29.38";
 
   // Animation controllers
   late AnimationController _blinkController;
@@ -451,43 +443,130 @@ class _PlantDashboardState extends State<PlantDashboard>
     fetchPlantData(); // Initial fetch
   }
 
+  void _handleNetworkError(String errorMessage) {
+    setState(() {
+      isConnected = false;
+
+      // Remove old connection error notifications to avoid spam
+      notifications.removeWhere(
+        (notification) =>
+            notification.type == 'error' &&
+            notification.title.contains('Connection Error'),
+      );
+
+      // Add new error notification
+      notifications.insert(
+        0,
+        NotificationData(
+          title: '❌ Connection Error',
+          message: errorMessage,
+          timestamp: DateTime.now(),
+          type: 'error',
+        ),
+      );
+
+      // Limit total notifications
+      if (notifications.length > 10) {
+        notifications = notifications.sublist(0, 10);
+      }
+    });
+  }
+
   Future<void> fetchPlantData() async {
     try {
-      final response = await http
-          .get(
-            Uri.parse('http://$esp32Ip/api/plant-data'),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(Duration(seconds: 8));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final newData = PlantData.fromJson(data).copyWith(
-          plantType: currentData?.plantType ?? 'generic',
-        );
-
-        setState(() {
-          currentData = newData;
-          isConnected = true;
-
-          // Add to history (keep last 50 entries)
-          dataHistory.add(newData);
-          if (dataHistory.length > 50) {
-            dataHistory.removeAt(0);
-          }
-
-          // Check for alerts
-          checkAndAddNotifications(newData);
-        });
-      } else {
-        setState(() {
-          isConnected = false;
-        });
-      }
-    } catch (e) {
       setState(() {
         isConnected = false;
       });
+
+      if (!RegExp(r'^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(esp32Ip)) {
+        throw Exception('Invalid IP address format');
+      }
+
+      final uri = Uri.parse('http://$esp32Ip/api/plant-data');
+      final request = http.Request('GET', uri);
+
+      request.headers.addAll({
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      });
+
+      final streamedResponse = await request.send().timeout(
+        Duration(seconds: 8),
+        onTimeout: () {
+          throw TimeoutException('Connection timeout', Duration(seconds: 8));
+        },
+      );
+
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        try {
+          final data = json.decode(response.body);
+          final newData = PlantData.fromJson(
+            data,
+          ).copyWith(plantType: currentData?.plantType ?? 'generic');
+
+          setState(() {
+            currentData = newData;
+            isConnected = true;
+            dataHistory.add(newData);
+            if (dataHistory.length > 50) {
+              dataHistory.removeAt(0);
+            }
+            checkAndAddNotifications(newData);
+          });
+
+          setState(() {
+            notifications.removeWhere(
+              (notification) =>
+                  notification.type == 'error' &&
+                  notification.title.contains('Connection Error'),
+            );
+          });
+        } on FormatException {
+          throw Exception(
+            'Invalid JSON response from ESP32. Please check ESP32 firmware.',
+          );
+        }
+      } else {
+        throw Exception(
+          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
+        );
+      }
+    } on TimeoutException {
+      _handleNetworkError(
+        'Connection timeout. Please check if ESP32 is online and accessible.',
+      );
+    } on FormatException {
+      _handleNetworkError(
+        'Invalid response format from ESP32. Please check ESP32 firmware.',
+      );
+    } on http.ClientException catch (e) {
+      if (e.toString().contains('Connection refused')) {
+        _handleNetworkError(
+          'Connection refused. Please check if ESP32 is running and accessible.',
+        );
+      } else {
+        _handleNetworkError('Network error: ${e.toString()}');
+      }
+    } catch (e) {
+      String errorMessage = e.toString();
+
+      if (errorMessage.contains('CORS') ||
+          errorMessage.contains('Access-Control-Allow-Origin')) {
+        _handleNetworkError(
+          'CORS Error: Please update ESP32 firmware with the latest code that includes CORS headers.',
+        );
+      } else if (errorMessage.contains('Failed host lookup')) {
+        _handleNetworkError(
+          'Cannot find ESP32. Please check:\n'
+          '1. ESP32 is powered on\n'
+          '2. Both devices are on the same WiFi network\n'
+          '3. IP address is correct',
+        );
+      } else {
+        _handleNetworkError(errorMessage);
+      }
     }
   }
 
@@ -495,7 +574,8 @@ class _PlantDashboardState extends State<PlantDashboard>
     List<NotificationData> newNotifications = [];
 
     // Get plant-specific requirements
-    final requirements = PlantCareModel.plantRequirements[data.plantType] ?? 
+    final requirements =
+        PlantCareModel.plantRequirements[data.plantType] ??
         PlantCareModel.plantRequirements['generic']!;
 
     if (data.soilMoisture < requirements['moisture']!['min']) {
@@ -577,6 +657,95 @@ class _PlantDashboardState extends State<PlantDashboard>
     );
   }
 
+  void _showESP32SetupInstructions() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.help_outline, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('ESP32 Setup Help'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'To fix CORS errors, upload the provided Arduino code to your ESP32.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  '📋 Setup Steps:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text('1. Install required libraries in Arduino IDE:'),
+                Text('   • ArduinoJson'),
+                SizedBox(height: 8),
+                Text('2. Update WiFi credentials in the code'),
+                SizedBox(height: 8),
+                Text('3. Upload the code to your ESP32'),
+                SizedBox(height: 8),
+                Text('4. Open Serial Monitor to see the IP address'),
+                SizedBox(height: 8),
+                Text('5. Enter the IP address in this app'),
+                SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '💡 Troubleshooting Tips:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[800],
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        '• Both devices must be on the same WiFi network',
+                        style: TextStyle(color: Colors.blue[700]),
+                      ),
+                      Text(
+                        '• ESP32 must be powered on and connected to WiFi',
+                        style: TextStyle(color: Colors.blue[700]),
+                      ),
+                      Text(
+                        '• Try visiting http://[ESP32-IP] in your browser first',
+                        style: TextStyle(color: Colors.blue[700]),
+                      ),
+                      Text(
+                        '• Check firewall settings if connection still fails',
+                        style: TextStyle(color: Colors.blue[700]),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text('Got it'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -635,10 +804,7 @@ class _PlantDashboardState extends State<PlantDashboard>
                           scale: notifications.isNotEmpty
                               ? _pulseAnimation.value
                               : 1.0,
-                          child: Icon(
-                            Icons.notifications,
-                            color: Colors.white,
-                          ),
+                          child: Icon(Icons.notifications, color: Colors.white),
                         );
                       },
                     ),
@@ -672,10 +838,7 @@ class _PlantDashboardState extends State<PlantDashboard>
                 builder: (context, child) {
                   return Container(
                     margin: EdgeInsets.all(8),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: isConnected
                           ? Colors.green[100]!.withOpacity(
@@ -757,10 +920,7 @@ class _PlantDashboardState extends State<PlantDashboard>
                                 ]),
                                 builder: (context, child) {
                                   return Transform.translate(
-                                    offset: Offset(
-                                      0,
-                                      -_bounceAnimation.value,
-                                    ),
+                                    offset: Offset(0, -_bounceAnimation.value),
                                     child: _buildPlantCharacter(),
                                   );
                                 },
@@ -805,11 +965,7 @@ class _PlantDashboardState extends State<PlantDashboard>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              _getPlantIcon(),
-              size: 80,
-              color: getStatusColor(),
-            ),
+            Icon(_getPlantIcon(), size: 80, color: getStatusColor()),
             SizedBox(height: 10),
             Text(
               currentData?.plantName ?? 'My Plant',
@@ -821,10 +977,7 @@ class _PlantDashboardState extends State<PlantDashboard>
             ),
             Text(
               _getPlantTypeName(currentData?.plantType ?? 'generic'),
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.green[600],
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.green[600]),
             ),
           ],
         ),
@@ -847,11 +1000,12 @@ class _PlantDashboardState extends State<PlantDashboard>
 
   String _getPlantTypeName(String type) {
     return {
-      'generic': 'Generic Plant',
-      'succulent': 'Succulent',
-      'fern': 'Fern',
-      'orchid': 'Orchid',
-    }[type] ?? 'Plant';
+          'generic': 'Generic Plant',
+          'succulent': 'Succulent',
+          'fern': 'Fern',
+          'orchid': 'Orchid',
+        }[type] ??
+        'Plant';
   }
 
   Widget _buildStatusCard() {
@@ -894,17 +1048,20 @@ class _PlantDashboardState extends State<PlantDashboard>
               ),
               SizedBox(height: 8),
               Text(
-                PlantCareModel.getStatus(currentData ?? PlantData(
-                  soilMoisture: 0,
-                  lightLevel: 0,
-                  temperature: 0,
-                  humidity: 0,
-                  status: 'Unknown',
-                  emotion: 'neutral',
-                  isOnline: false,
-                  timestamp: 0,
-                  plantType: 'generic',
-                )),
+                PlantCareModel.getStatus(
+                  currentData ??
+                      PlantData(
+                        soilMoisture: 0,
+                        lightLevel: 0,
+                        temperature: 0,
+                        humidity: 0,
+                        status: 'Unknown',
+                        emotion: 'neutral',
+                        isOnline: false,
+                        timestamp: 0,
+                        plantType: 'generic',
+                      ),
+                ),
                 style: TextStyle(
                   fontSize: 18,
                   color: getStatusColor(),
@@ -1095,34 +1252,38 @@ class _PlantDashboardState extends State<PlantDashboard>
 
   bool _isMoistureGood() {
     if (currentData == null) return false;
-    final requirements = PlantCareModel.plantRequirements[currentData!.plantType] ?? 
+    final requirements =
+        PlantCareModel.plantRequirements[currentData!.plantType] ??
         PlantCareModel.plantRequirements['generic']!;
     return currentData!.soilMoisture >= requirements['moisture']!['min'] &&
-           currentData!.soilMoisture <= requirements['moisture']!['max'];
+        currentData!.soilMoisture <= requirements['moisture']!['max'];
   }
 
   bool _isLightGood() {
     if (currentData == null) return false;
-    final requirements = PlantCareModel.plantRequirements[currentData!.plantType] ?? 
+    final requirements =
+        PlantCareModel.plantRequirements[currentData!.plantType] ??
         PlantCareModel.plantRequirements['generic']!;
     return currentData!.lightLevel >= requirements['light']!['min'] &&
-           currentData!.lightLevel <= requirements['light']!['max'];
+        currentData!.lightLevel <= requirements['light']!['max'];
   }
 
   bool _isTemperatureGood() {
     if (currentData == null) return false;
-    final requirements = PlantCareModel.plantRequirements[currentData!.plantType] ?? 
+    final requirements =
+        PlantCareModel.plantRequirements[currentData!.plantType] ??
         PlantCareModel.plantRequirements['generic']!;
     return currentData!.temperature >= requirements['temperature']!['min'] &&
-           currentData!.temperature <= requirements['temperature']!['max'];
+        currentData!.temperature <= requirements['temperature']!['max'];
   }
 
   bool _isHumidityGood() {
     if (currentData == null) return false;
-    final requirements = PlantCareModel.plantRequirements[currentData!.plantType] ?? 
+    final requirements =
+        PlantCareModel.plantRequirements[currentData!.plantType] ??
         PlantCareModel.plantRequirements['generic']!;
     return currentData!.humidity >= requirements['humidity']!['min'] &&
-           currentData!.humidity <= requirements['humidity']!['max'];
+        currentData!.humidity <= requirements['humidity']!['max'];
   }
 
   Widget _buildSensorCard({
@@ -1172,17 +1333,20 @@ class _PlantDashboardState extends State<PlantDashboard>
             ),
             SizedBox(height: 8),
             Text(
-              PlantCareModel.getRecommendation(currentData ?? PlantData(
-                soilMoisture: 0,
-                lightLevel: 0,
-                temperature: 0,
-                humidity: 0,
-                status: 'Unknown',
-                emotion: 'neutral',
-                isOnline: false,
-                timestamp: 0,
-                plantType: 'generic',
-              )),
+              PlantCareModel.getRecommendation(
+                currentData ??
+                    PlantData(
+                      soilMoisture: 0,
+                      lightLevel: 0,
+                      temperature: 0,
+                      humidity: 0,
+                      status: 'Unknown',
+                      emotion: 'neutral',
+                      isOnline: false,
+                      timestamp: 0,
+                      plantType: 'generic',
+                    ),
+              ),
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
@@ -1217,7 +1381,8 @@ class _PlantDashboardState extends State<PlantDashboard>
             unit: 'pH',
             icon: Icons.science,
             color: Colors.purple,
-            isGood: (currentData?.ph ?? 0) >= 6.0 && (currentData?.ph ?? 0) <= 7.5,
+            isGood:
+                (currentData?.ph ?? 0) >= 6.0 && (currentData?.ph ?? 0) <= 7.5,
             progress: math.max(0, math.min((currentData?.ph ?? 0) / 14, 1.0)),
           ),
         ],
@@ -1339,6 +1504,12 @@ class _PlantDashboardState extends State<PlantDashboard>
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    Spacer(),
+                    IconButton(
+                      icon: Icon(Icons.help_outline, color: Colors.blue),
+                      onPressed: _showESP32SetupInstructions,
+                      tooltip: 'Setup Help',
+                    ),
                   ],
                 ),
                 SizedBox(height: 16),
@@ -1353,6 +1524,7 @@ class _PlantDashboardState extends State<PlantDashboard>
                       icon: Icon(Icons.refresh),
                       onPressed: fetchPlantData,
                     ),
+                    helperText: 'Example: 192.168.1.100',
                   ),
                   controller: TextEditingController(text: esp32Ip),
                   onChanged: (value) => esp32Ip = value,
@@ -1362,12 +1534,31 @@ class _PlantDashboardState extends State<PlantDashboard>
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: fetchPlantData,
+                        onPressed: testConnection,
                         icon: Icon(Icons.network_check),
                         label: Text('Test Connection'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green[600],
                           foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _showESP32SetupInstructions,
+                        icon: Icon(Icons.help),
+                        label: Text('Setup Help'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blue[600],
                           padding: EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -1547,5 +1738,79 @@ class _PlantDashboardState extends State<PlantDashboard>
   String _formatTimestamp(int timestamp) {
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
     return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> testConnection() async {
+    try {
+      setState(() {
+        notifications.insert(
+          0,
+          NotificationData(
+            title: '🔄 Testing Connection',
+            message: 'Attempting to connect to ESP32...',
+            timestamp: DateTime.now(),
+            type: 'info',
+          ),
+        );
+      });
+
+      // Test basic IP format
+      if (!RegExp(r'^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(esp32Ip)) {
+        throw Exception(
+          'Invalid IP address format. Please use format: xxx.xxx.xxx.xxx',
+        );
+      }
+
+      // Try to connect with a shorter timeout
+      final response = await http
+          .get(
+            Uri.parse('http://$esp32Ip/api/plant-data'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        setState(() {
+          notifications.insert(
+            0,
+            NotificationData(
+              title: '✅ Connection Successful',
+              message: 'Successfully connected to ESP32 at $esp32Ip',
+              timestamp: DateTime.now(),
+              type: 'success',
+            ),
+          );
+        });
+      } else {
+        throw Exception(
+          'Server responded with status code: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      String errorMessage = e.toString();
+      if (e is TimeoutException) {
+        errorMessage =
+            'Connection timed out. Please verify the ESP32 is powered on and the IP address is correct.';
+      } else if (e.toString().contains('SocketException')) {
+        errorMessage =
+            'Could not reach the ESP32. Please check:\n'
+            '1. ESP32 is powered on\n'
+            '2. Both devices are on the same network\n'
+            '3. IP address is correct\n'
+            '4. No firewall is blocking the connection';
+      }
+
+      setState(() {
+        notifications.insert(
+          0,
+          NotificationData(
+            title: '❌ Connection Failed',
+            message: errorMessage,
+            timestamp: DateTime.now(),
+            type: 'error',
+          ),
+        );
+      });
+    }
   }
 }
